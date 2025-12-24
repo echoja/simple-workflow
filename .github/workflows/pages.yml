@@ -33,26 +33,184 @@ jobs:
         id: tests
         run: |
           set +e
-          bun test | tee test.log
-          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          mkdir -p reports
+          bun test --reporter=junit --reporter-outfile=reports/junit.xml
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
           exit 0
 
       - name: Generate report
         run: |
           mkdir -p public
           python - <<'PY'
-          import html, pathlib
-          log = pathlib.Path("test.log").read_text()
+          import html
+          import pathlib
+          import xml.etree.ElementTree as ET
+
+          def to_int(value, default=0):
+              try:
+                  return int(value)
+              except (TypeError, ValueError):
+                  return default
+
+          def to_float(value, default=0.0):
+              try:
+                  return float(value)
+              except (TypeError, ValueError):
+                  return default
+
+          report_path = pathlib.Path("reports/junit.xml")
+          out_path = pathlib.Path("public/index.html")
+
+          if not report_path.exists():
+              page = (
+                  "<html><head><meta charset='utf-8'/>"
+                  "<title>Test Report</title>"
+                  "<style>"
+                  "body{font-family:system-ui, sans-serif; padding:24px;}"
+                  ".card{background:#f6f8fa; padding:16px; border-radius:8px;}"
+                  "</style></head><body>"
+                  "<h1>Test Report</h1>"
+                  "<div class='card'>No JUnit report found.</div>"
+                  "</body></html>"
+              )
+              out_path.write_text(page)
+              raise SystemExit(0)
+
+          root = ET.parse(report_path).getroot()
+
+          if root.tag == "testsuite":
+              suites = [root]
+          else:
+              all_suites = list(root.iter("testsuite"))
+              leaf_suites = [s for s in all_suites if not list(s.findall("testsuite"))]
+              suites = leaf_suites or all_suites
+
+          suite_blocks = []
+          total_tests = total_failures = total_errors = total_skipped = 0
+          total_time = 0.0
+
+          for suite in suites:
+              cases = list(suite.iter("testcase"))
+              suite_tests = to_int(suite.get("tests"), len(cases))
+              suite_failures = to_int(suite.get("failures"), 0)
+              suite_errors = to_int(suite.get("errors"), 0)
+              suite_skipped = to_int(suite.get("skipped"), 0)
+              suite_time = to_float(suite.get("time"), 0.0)
+
+              if suite.get("tests") is None:
+                  suite_tests = len(cases)
+              if suite.get("failures") is None:
+                  suite_failures = sum(1 for c in cases if c.find("failure") is not None)
+              if suite.get("errors") is None:
+                  suite_errors = sum(1 for c in cases if c.find("error") is not None)
+              if suite.get("skipped") is None:
+                  suite_skipped = sum(1 for c in cases if c.find("skipped") is not None)
+
+              total_tests += suite_tests
+              total_failures += suite_failures
+              total_errors += suite_errors
+              total_skipped += suite_skipped
+              total_time += suite_time
+
+              rows = []
+              for case in cases:
+                  failure = case.find("failure")
+                  error = case.find("error")
+                  skipped = case.find("skipped")
+
+                  if failure is not None:
+                      status = "fail"
+                      detail_node = failure
+                  elif error is not None:
+                      status = "error"
+                      detail_node = error
+                  elif skipped is not None:
+                      status = "skip"
+                      detail_node = skipped
+                  else:
+                      status = "pass"
+                      detail_node = None
+
+                  name = case.get("name") or ""
+                  classname = case.get("classname") or ""
+                  duration = case.get("time") or ""
+
+                  detail_html = ""
+                  if detail_node is not None:
+                      message = detail_node.get("message") or detail_node.get("type") or ""
+                      body = (detail_node.text or "").strip()
+                      summary = html.escape(message) if message else "Details"
+                      body_html = html.escape(body) if body else "No details."
+                      detail_html = (
+                          "<details>"
+                          f"<summary>{summary}</summary>"
+                          f"<pre>{body_html}</pre>"
+                          "</details>"
+                      )
+
+                  rows.append(
+                      f"<tr class='status-{status}'>"
+                      f"<td>{status.upper()}</td>"
+                      f"<td>{html.escape(name)}</td>"
+                      f"<td>{html.escape(classname)}</td>"
+                      f"<td>{html.escape(duration)}</td>"
+                      f"<td>{detail_html}</td>"
+                      "</tr>"
+                  )
+
+              suite_name = suite.get("name") or "Unnamed Suite"
+              suite_block = (
+                  "<section class='suite'>"
+                  f"<h2>{html.escape(suite_name)}</h2>"
+                  "<div class='meta'>"
+                  f"Tests: {suite_tests} &nbsp; "
+                  f"Failures: {suite_failures} &nbsp; "
+                  f"Errors: {suite_errors} &nbsp; "
+                  f"Skipped: {suite_skipped} &nbsp; "
+                  f"Time: {suite_time:.3f}s"
+                  "</div>"
+                  "<div class='table-wrap'>"
+                  "<table>"
+                  "<thead><tr>"
+                  "<th>Status</th><th>Test</th><th>Class</th><th>Time</th><th>Details</th>"
+                  "</tr></thead>"
+                  "<tbody>"
+                  + "".join(rows)
+                  + "</tbody></table></div></section>"
+              )
+              suite_blocks.append(suite_block)
+
           page = (
               "<html><head><meta charset='utf-8'/>"
               "<title>Test Report</title>"
-              "<style>body{font-family:system-ui, sans-serif; padding:24px;}"
-              "pre{background:#f6f8fa; padding:16px; border-radius:8px; overflow:auto;}</style>"
-              "</head><body><h1>Test Report</h1><pre>"
-              f"{html.escape(log)}"
-              "</pre></body></html>"
+              "<style>"
+              "body{font-family:system-ui, sans-serif; padding:24px; color:#111;}"
+              "h1{margin:0 0 12px 0;}h2{margin:20px 0 8px 0;}"
+              ".summary{display:flex; flex-wrap:wrap; gap:12px; margin:12px 0 20px 0;}"
+              ".card{background:#f6f8fa; padding:12px 16px; border-radius:8px;}"
+              ".meta{color:#555; font-size:14px; margin-bottom:8px;}"
+              ".table-wrap{overflow:auto; border:1px solid #e5e7eb; border-radius:8px;}"
+              "table{width:100%; border-collapse:collapse; font-size:14px;}"
+              "th,td{padding:8px 10px; border-bottom:1px solid #e5e7eb; text-align:left; vertical-align:top;}"
+              "tr.status-pass td:first-child{color:#0f766e; font-weight:600;}"
+              "tr.status-fail td:first-child{color:#b42318; font-weight:600;}"
+              "tr.status-error td:first-child{color:#7a271a; font-weight:600;}"
+              "tr.status-skip td:first-child{color:#6b7280; font-weight:600;}"
+              "details>summary{cursor:pointer;}"
+              "pre{margin:8px 0 0 0; background:#0b1020; color:#e6edf3; padding:10px; border-radius:6px; overflow:auto;}"
+              "</style></head><body>"
+              "<h1>Test Report</h1>"
+              "<div class='summary'>"
+              f"<div class='card'>Total: {total_tests}</div>"
+              f"<div class='card'>Failures: {total_failures}</div>"
+              f"<div class='card'>Errors: {total_errors}</div>"
+              f"<div class='card'>Skipped: {total_skipped}</div>"
+              f"<div class='card'>Time: {total_time:.3f}s</div>"
+              "</div>"
+              + "".join(suite_blocks)
+              + "</body></html>"
           )
-          pathlib.Path("public/index.html").write_text(page)
+          out_path.write_text(page)
           PY
 
       - uses: actions/upload-pages-artifact@v3
