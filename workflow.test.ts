@@ -53,7 +53,7 @@ test("rolls back completed steps in reverse order on failure", async () => {
     }
   );
 
-  const step3 = createStep((_ctx: Ctx) => {
+  const step3 = createStep((_ctx: Ctx): any => {
     events.push("action3");
     throw new Error("boom");
   });
@@ -61,7 +61,7 @@ test("rolls back completed steps in reverse order on failure", async () => {
   const workflow = new Workflow<Ctx>([step1, step2, step3]);
   const ctx: Ctx = { events };
 
-  await expect(workflow.execute(ctx)).rejects.toThrow("boom");
+  expect(workflow.execute(ctx)).rejects.toThrow("boom");
 
   expect(events).toEqual([
     "action1",

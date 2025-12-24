@@ -1,5 +1,8 @@
 # simple-workflow
 
+[![CI](https://github.com/echoja/simple-workflow/actions/workflows/ci.yml/badge.svg)](https://github.com/echoja/simple-workflow/actions/workflows/ci.yml)
+[![Pages](https://github.com/echoja/simple-workflow/actions/workflows/pages.yml/badge.svg)](https://github.com/echoja/simple-workflow/actions/workflows/pages.yml)
+
 Rollback이 필요한 복잡한 작업을 단계별로 실행하고, 실패 시 역순으로 복구하는 간단한 Workflow 유틸입니다.
 
 ## 설치
@@ -54,6 +57,10 @@ await workflow.execute({ userId: "123", createdResourceIds: [] });
 ```bash
 bun test
 ```
+
+## 테스트 리포트 (GitHub Pages)
+
+https://echoja.github.io/simple-workflow/
 
 ## 라이선스
 

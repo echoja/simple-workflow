@@ -1,0 +1,67 @@
+name: pages
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/configure-pages@v5
+
+      - run: bun install
+
+      - name: Run tests
+        id: tests
+        run: |
+          set +e
+          bun test | tee test.log
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Generate report
+        run: |
+          mkdir -p public
+          python - <<'PY'
+          import html, pathlib
+          log = pathlib.Path("test.log").read_text()
+          page = (
+              "<html><head><meta charset='utf-8'/>"
+              "<title>Test Report</title>"
+              "<style>body{font-family:system-ui, sans-serif; padding:24px;}"
+              "pre{background:#f6f8fa; padding:16px; border-radius:8px; overflow:auto;}</style>"
+              "</head><body><h1>Test Report</h1><pre>"
+              f"{html.escape(log)}"
+              "</pre></body></html>"
+          )
+          pathlib.Path("public/index.html").write_text(page)
+          PY
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Fail if tests failed
+        if: ${{ steps.tests.outputs.exit_code != '0' }}
+        run: exit 1
