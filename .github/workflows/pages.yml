@@ -218,7 +218,7 @@ jobs:
           path: public
 
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
       - name: Fail if tests failed
         if: ${{ steps.tests.outputs.exit_code != '0' }}
