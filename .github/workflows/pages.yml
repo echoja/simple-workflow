@@ -213,7 +213,7 @@ jobs:
           out_path.write_text(page)
           PY
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: public
 
