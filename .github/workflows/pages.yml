@@ -2,7 +2,8 @@ name: pages
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
+  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -15,12 +16,12 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: echoja-simple-workflow-linux
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
       - uses: oven-sh/setup-bun@v2
         with:
@@ -223,3 +224,5 @@ jobs:
       - name: Fail if tests failed
         if: ${{ steps.tests.outputs.exit_code != '0' }}
         run: exit 1
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    timeout-minutes: 20
